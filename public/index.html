@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Multiplayer Wortspiel</title>
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+
+<h2>Multiplayer Wortspiel</h2>
+
+<input id="name" placeholder="Dein Name">
+<button onclick="join()">Beitreten</button>
+
+<br><br>
+
+<input id="letter" maxlength="1" placeholder="Buchstabe">
+<button onclick="sendLetter()">Senden</button>
+
+<br><br>
+
+<input id="word" placeholder="Wort">
+<button onclick="sendWord()">Wort einreichen</button>
+
+<h3>Punktestand</h3>
+<ul id="scores"></ul>
+
+<script>
+const socket = io();
+
+function join() {
+  socket.emit('join', document.getElementById('name').value);
+}
+
+function sendLetter() {
+  socket.emit('letter', document.getElementById('letter').value);
+}
+
+function sendWord() {
+  socket.emit('word', document.getElementById('word').value.toLowerCase());
+}
+
+socket.on('state', state => {
+  const ul = document.getElementById('scores');
+  ul.innerHTML = '';
+  Object.values(state.players).forEach(p => {
+    const li = document.createElement('li');
+    li.textContent = `${p.name}: ${p.score} Punkte ( ${p.letter} )`;
+    ul.appendChild(li);
+  });
+});
+</script>
+
+</body>
+</html>
