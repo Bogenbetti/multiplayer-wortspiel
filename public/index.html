@@ -1,55 +1,185 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <title>Multiplayer Wortspiel</title>
-  <script src="/socket.io/socket.io.js"></script>
+<meta charset="UTF-8">
+<title>Buchstaben-Wortspiel</title>
+<script src="/socket.io/socket.io.js"></script>
+
+<style>
+:root {
+  --bg:#020617;
+  --panel:#111827;
+  --accent:#4ade80;
+  --danger:#ef4444;
+  --text:#e5e7eb;
+}
+body {
+  background: radial-gradient(circle at top, #111827, var(--bg));
+  color: var(--text);
+  font-family: system-ui, sans-serif;
+  margin:0;
+}
+.container {
+  max-width:900px;
+  margin:auto;
+  padding:40px 20px;
+}
+.panel {
+  background:var(--panel);
+  padding:24px;
+  border-radius:18px;
+  margin-bottom:20px;
+}
+.center {
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:12px;
+}
+input {
+  font-size:20px;
+  padding:12px;
+  border-radius:10px;
+  border:none;
+  text-align:center;
+}
+button {
+  padding:12px 22px;
+  border:none;
+  border-radius:10px;
+  background:var(--accent);
+  cursor:pointer;
+  font-weight:600;
+}
+button.danger { background:var(--danger); color:white; }
+button.secondary { background:#374151; color:white; }
+.letters {
+  display:flex;
+  justify-content:center;
+  gap:16px;
+  margin:30px 0;
+}
+.letter {
+  width:90px;
+  height:90px;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  font-size:42px;
+  background:#020617;
+  border-radius:16px;
+}
+.timer {
+  font-size:22px;
+  margin-bottom:10px;
+}
+.players {
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+  gap:12px;
+}
+.player {
+  background:#020617;
+  padding:12px;
+  border-radius:12px;
+  text-align:center;
+}
+#submitted {
+  color:var(--accent);
+  font-size:22px;
+}
+</style>
 </head>
+
 <body>
+<div class="container">
 
-<h2>Multiplayer Wortspiel</h2>
+<h1>🧠 Buchstaben-Wortspiel</h1>
 
-<input id="name" placeholder="Dein Name">
-<button onclick="join()">Beitreten</button>
+<div id="lobby" class="panel">
+  <div class="center">
+    <input id="name" placeholder="Dein Name">
+    <div>
+      <button onclick="join()">Beitreten</button>
+      <button class="secondary" onclick="ready()">Bereit</button>
+    </div>
+  </div>
+  <div class="players" id="players"></div>
+</div>
 
-<br><br>
+<div id="game" class="panel" style="display:none;">
+  <div class="center">
+    <div class="timer" id="timer"></div>
+    <div class="letters" id="letters"></div>
+    <input id="wordInput" placeholder="Wort eingeben & Enter">
+    <div id="submitted"></div>
 
-<input id="letter" maxlength="1" placeholder="Buchstabe">
-<button onclick="sendLetter()">Senden</button>
+    <div id="voting" style="display:none;">
+      <button onclick="vote(true)">👍 OK</button>
+      <button class="danger" onclick="vote(false)">👎 Nicht OK</button>
+    </div>
 
-<br><br>
+    <button class="secondary" onclick="resetGame()">🔁 Reset</button>
+  </div>
 
-<input id="word" placeholder="Wort">
-<button onclick="sendWord()">Wort einreichen</button>
+  <div class="players" id="scores"></div>
+</div>
 
-<h3>Punktestand</h3>
-<ul id="scores"></ul>
+</div>
 
 <script>
 const socket = io();
+let myId;
+
+socket.on('connect', () => myId = socket.id);
 
 function join() {
-  socket.emit('join', document.getElementById('name').value);
+  const n = document.getElementById('name').value;
+  if (n) socket.emit('join', n);
 }
+function ready() { socket.emit('ready'); }
+function vote(v) { socket.emit('vote', v); }
+function resetGame() { socket.emit('reset'); }
 
-function sendLetter() {
-  socket.emit('letter', document.getElementById('letter').value);
-}
+document.getElementById('wordInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    socket.emit('submitWord', e.target.value.trim());
+  }
+});
 
-function sendWord() {
-  socket.emit('word', document.getElementById('word').value.toLowerCase());
-}
+socket.on('state', game => {
+  document.getElementById('lobby').style.display =
+    game.phase === 'LOBBY' ? 'block' : 'none';
+  document.getElementById('game').style.display =
+    game.phase === 'LOBBY' ? 'none' : 'block';
 
-socket.on('state', state => {
-  const ul = document.getElementById('scores');
-  ul.innerHTML = '';
-  Object.values(state.players).forEach(p => {
-    const li = document.createElement('li');
-    li.textContent = `${p.name}: ${p.score} Punkte ( ${p.letter} )`;
-    ul.appendChild(li);
+  document.getElementById('timer').textContent =
+    game.phase === 'PLAYING' ? `⏱️ ${game.timeLeft}s` : '';
+
+  const players = document.getElementById('players');
+  players.innerHTML = '';
+  Object.values(game.players).forEach(p => {
+    players.innerHTML += `<div class="player">${p.name}<br>${p.ready?'bereit':'wartet'}</div>`;
+  });
+
+  const letters = document.getElementById('letters');
+  letters.innerHTML = '';
+  (game.letters||[]).forEach(l=>{
+    letters.innerHTML += `<div class="letter">${l}</div>`;
+  });
+
+  document.getElementById('submitted').textContent =
+    game.submittedWord ? `Wort: ${game.submittedWord}` : '';
+
+  document.getElementById('voting').style.display =
+    game.phase === 'VOTING' && myId !== game.submitterId ? 'block' : 'none';
+
+  const scores = document.getElementById('scores');
+  scores.innerHTML = '';
+  Object.values(game.players).forEach(p=>{
+    scores.innerHTML += `<div class="player">${p.name}<br>${p.score} Punkte</div>`;
   });
 });
 </script>
-
 </body>
 </html>
